@@ -5,9 +5,12 @@ import {
   DialogTrigger,
   Button,
 } from '@eth-optimism/ui-components'
-import { useWriteDepositERC20, useWriteDepositETH } from 'op-wagmi'
+// import { useWriteDepositERC20, useWriteDepositETH } from 'op-wagmi'
 import type { Token } from '@eth-optimism/op-app'
-import { useOPWagmiConfig, deploymentAddresses } from '@eth-optimism/op-app'
+import {
+  //  useOPWagmiConfig,
+  deploymentAddresses,
+} from '@eth-optimism/op-app'
 
 import {
   Address,
@@ -22,16 +25,23 @@ import {
   useAccount,
   useEstimateFeesPerGas,
   useEstimateGas,
-  usePublicClient,
+  // usePublicClient,
 } from 'wagmi'
-import { useCallback, useMemo, useState } from 'react'
-import { NETWORK_TYPE } from '@/constants/networkType'
+import {
+  // useCallback,
+  useMemo,
+  useState,
+} from 'react'
+// import { NETWORK_TYPE } from '@/constants/networkType'
 import {
   l1StandardBridgeABI,
   optimismPortalABI,
 } from '@eth-optimism/contracts-ts'
-import { ERC20_DEPOSIT_MIN_GAS_LIMIT, MAX_ALLOWANCE } from '@/constants/bridge'
-import { useERC20Allowance } from '@/hooks/useERC20Allowance'
+import {
+  ERC20_DEPOSIT_MIN_GAS_LIMIT,
+  // MAX_ALLOWANCE
+} from '@/constants/bridge'
+// import { useERC20Allowance } from '@/hooks/useERC20Allowance'
 //
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
 import { ethers } from 'ethers'
@@ -62,35 +72,34 @@ export type ReviewDepositDialogContent = {
 
 const ReviewDepositDialogContent = ({
   l1,
-  l2,
+  // l2,
   txData,
   selectedTokenPair,
-  gasPrice,
-  onSubmit,
+  gasPrice, // onSubmit,
 }: ReviewDepositDialogContent) => {
-  const { address, chain } = useAccount()
-  const { opConfig } = useOPWagmiConfig({
-    type: NETWORK_TYPE,
-    chainId: chain?.id,
-  })
+  const { address } = useAccount()
+  // const { opConfig } = useOPWagmiConfig({
+  //   type: NETWORK_TYPE,
+  //   chainId: chain?.id,
+  // })
 
-  const l1PublicClient = usePublicClient({ chainId: l1.id })
+  // const l1PublicClient = usePublicClient({ chainId: l1.id })
 
-  const { data: l1TxHash, writeDepositETHAsync } = useWriteDepositETH({
-    config: opConfig,
-  })
-  const { data: l1ERC20TxHash, writeDepositERC20Async } = useWriteDepositERC20({
-    config: opConfig,
-  })
-  const { allowance, approve } = useERC20Allowance({
-    token: selectedTokenPair[0],
-    amount: MAX_ALLOWANCE,
-    owner: address as Address,
-    spender: txData.to,
-  })
+  // const { data: l1TxHash, writeDepositETHAsync } = useWriteDepositETH({
+  //   config: opConfig,
+  // })
+  // const { data: l1ERC20TxHash, writeDepositERC20Async } = useWriteDepositERC20({
+  //   config: opConfig,
+  // })
+  // const { allowance, approve } = useERC20Allowance({
+  //   token: selectedTokenPair[0],
+  //   amount: MAX_ALLOWANCE,
+  //   owner: address as Address,
+  //   spender: txData.to,
+  // })
 
-  const txHash = txData.isETH ? l1TxHash : l1ERC20TxHash
-  const [l1Token, l2Token] = selectedTokenPair
+  // const txHash = txData.isETH ? l1TxHash : l1ERC20TxHash
+  const [l1Token] = selectedTokenPair
 
   //
   const [txhash, setTxhash] = useState<String>()
@@ -130,46 +139,46 @@ const ReviewDepositDialogContent = ({
     }
   }
 
-  const onSubmitDeposit = useCallback(async () => {
-    if (txData.isETH) {
-      console.log('calling write deposit eth async')
-      await writeDepositETHAsync({
-        args: {
-          to: txData.to,
-          amount: txData.amount,
-        },
-        l2ChainId: l2.id,
-      })
-    } else {
-      const shouldApprove =
-        !txData.isETH && (allowance.data ?? 0n) < txData.amount
-      if (shouldApprove) {
-        const approvalTxHash = await approve()
-        await l1PublicClient.waitForTransactionReceipt({ hash: approvalTxHash })
-      }
+  // const onSubmitDeposit = useCallback(async () => {
+  //   if (txData.isETH) {
+  //     console.log('calling write deposit eth async')
+  //     await writeDepositETHAsync({
+  //       args: {
+  //         to: txData.to,
+  //         amount: txData.amount,
+  //       },
+  //       l2ChainId: l2.id,
+  //     })
+  //   } else {
+  //     const shouldApprove =
+  //       !txData.isETH && (allowance.data ?? 0n) < txData.amount
+  //     if (shouldApprove) {
+  //       const approvalTxHash = await approve()
+  //       await l1PublicClient.waitForTransactionReceipt({ hash: approvalTxHash })
+  //     }
 
-      await writeDepositERC20Async({
-        args: {
-          l1Token: l1Token.address as Address,
-          l2Token: l2Token.address as Address,
-          to: txData.to,
-          amount: txData.amount,
-        },
-        l2ChainId: l2.id,
-      })
-    }
-    onSubmit?.()
-  }, [
-    approve,
-    writeDepositETHAsync,
-    writeDepositERC20Async,
-    onSubmit,
-    txData,
-    l2,
-    l1PublicClient,
-    l1Token,
-    l2Token,
-  ])
+  //     await writeDepositERC20Async({
+  //       args: {
+  //         l1Token: l1Token.address as Address,
+  //         l2Token: l2Token.address as Address,
+  //         to: txData.to,
+  //         amount: txData.amount,
+  //       },
+  //       l2ChainId: l2.id,
+  //     })
+  //   }
+  //   onSubmit?.()
+  // }, [
+  //   approve,
+  //   writeDepositETHAsync,
+  //   writeDepositERC20Async,
+  //   onSubmit,
+  //   txData,
+  //   l2,
+  //   l1PublicClient,
+  //   l1Token,
+  //   l2Token,
+  // ])
 
   return (
     <div className="flex flex-col w-full">
