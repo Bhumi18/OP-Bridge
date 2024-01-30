@@ -30,6 +30,9 @@ import { NETWORK_TYPE } from '@/constants/networkType'
 import { l2StandardBridgeABI, predeploys } from '@eth-optimism/contracts-ts'
 import { useERC20Allowance } from '@/hooks/useERC20Allowance'
 import { MAX_ALLOWANCE } from '@/constants/bridge'
+//
+import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
+import { ethers } from 'ethers'
 
 export type ReviewWithdrawalDialogProps = {
   l1: Chain
@@ -84,6 +87,74 @@ const ReviewWithdrawalDialogContent = ({
   const txHash = txData.isETH ? l2TxHash : l2ERC20TxHash
   const [_, l2Token] = selectedTokenPair
 
+  //
+  const [txhash, setTxhash] = useState<String>()
+  const onSubmitwithdrawal = async () => {
+    try {
+      if (typeof window.ethereum !== 'undefined') {
+        const l1Provider = new ethers.providers.StaticJsonRpcProvider(
+          'https://rpc.ankr.com/eth_sepolia',
+        )
+        const l2Provider = new ethers.providers.Web3Provider(window.ethereum)
+
+        const l1Signer = l1Provider.getSigner(address)
+        const l2Signer = l2Provider.getSigner(address)
+
+        const messenger = new CrossChainMessenger({
+          l1ChainId: 11155111, // 11155111 for Sepolia, 1 for Ethereum
+          l2ChainId: 11155420, // 11155420 for OP Sepolia, 10 for OP Mainnet
+          l1SignerOrProvider: l1Signer,
+          l2SignerOrProvider: l2Signer,
+        })
+        const withdrawEth = formatUnits(txData.amount, l2Token.decimals)
+
+        // Start your withdrawal on L2
+        const withdrawal = await messenger.withdrawETH(
+          ethers.utils.parseEther(withdrawEth),
+        )
+        await withdrawal.wait()
+
+        // Check your wallet balance on L2
+        console.log((await l2Signer.getBalance()).toString())
+        setTxhash(withdrawal.hash)
+        // Wait until the withdrawal is ready to prove
+        await messenger.waitForMessageStatus(
+          withdrawal.hash,
+          MessageStatus.READY_TO_PROVE,
+        )
+
+        // Prove the withdrawal on L1
+        await messenger.proveMessage(withdrawal.hash)
+
+        // Wait until the withdrawal is ready for relay
+        await messenger.waitForMessageStatus(
+          withdrawal.hash,
+          MessageStatus.READY_FOR_RELAY,
+        )
+
+        // Relay the withdrawal on L1
+        await messenger.finalizeMessage(withdrawal.hash)
+
+        // Wait until the withdrawal is relayed
+        await messenger.waitForMessageStatus(
+          withdrawal.hash,
+          MessageStatus.RELAYED,
+        )
+
+        // Check your wallet balance on L1
+        console.log((await l1Signer.getBalance()).toString())
+        console.log('Bridged...')
+        onSubmit?.()
+      } else {
+        console.error(
+          'MetaMask not detected. Please install and connect MetaMask.',
+        )
+      }
+    } catch (error) {
+      console.error('Error in onSubmitWithdraw:', error)
+    }
+  }
+
   const onSubmitWithdrawal = useCallback(async () => {
     if (txData.isETH) {
       await writeWithdrawETHAsync({
@@ -130,18 +201,18 @@ const ReviewWithdrawalDialogContent = ({
       </div>
       <div>Gas Fee to Transfer: ~{formatEther(gasPrice)} ETH</div>
       <div>Time to transfer: ~1 minute</div>
-      {txHash ? (
+      {txhash ? (
         <div>
           View Transaction:{' '}
           <a
             className="cursor-pointer underline"
-            href={`${l2.blockExplorers?.default.url}/tx/${l2TxHash}`}
+            href={`${l2.blockExplorers?.default.url}/tx/${txhash}`}
           >
             link
           </a>
         </div>
       ) : (
-        <Button onClick={onSubmitWithdrawal}>Submit Withdrawal</Button>
+        <Button onClick={onSubmitwithdrawal}>Submit Withdrawal</Button>
       )}
     </div>
   )
