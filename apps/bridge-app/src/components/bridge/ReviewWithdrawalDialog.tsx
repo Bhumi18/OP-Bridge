@@ -35,6 +35,7 @@ import { l2StandardBridgeABI, predeploys } from '@eth-optimism/contracts-ts'
 // import { useERC20Allowance } from '@/hooks/useERC20Allowance'
 // import { MAX_ALLOWANCE } from '@/constants/bridge'
 //
+
 import { CrossChainMessenger, MessageStatus } from '@eth-optimism/sdk'
 import { ethers } from 'ethers'
 
@@ -93,6 +94,11 @@ const ReviewWithdrawalDialogContent = ({
 
   //
   const [txhash, setTxhash] = useState<String>()
+  const [withdrawData, setWithdrawData] = useState<
+    ethers.providers.TransactionResponse | undefined
+  >()
+  const [loading, setLoading] = useState<boolean>()
+
   const onSubmitwithdrawal = async () => {
     try {
       if (typeof window.ethereum !== 'undefined') {
@@ -117,38 +123,11 @@ const ReviewWithdrawalDialogContent = ({
           ethers.utils.parseEther(withdrawEth),
         )
         await withdrawal.wait()
+        setWithdrawData(withdrawal)
 
         // Check your wallet balance on L2
         console.log((await l2Signer.getBalance()).toString())
         setTxhash(withdrawal.hash)
-        // Wait until the withdrawal is ready to prove
-        await messenger.waitForMessageStatus(
-          withdrawal.hash,
-          MessageStatus.READY_TO_PROVE,
-        )
-
-        // Prove the withdrawal on L1
-        await messenger.proveMessage(withdrawal.hash)
-
-        // Wait until the withdrawal is ready for relay
-        await messenger.waitForMessageStatus(
-          withdrawal.hash,
-          MessageStatus.READY_FOR_RELAY,
-        )
-
-        // Relay the withdrawal on L1
-        await messenger.finalizeMessage(withdrawal.hash)
-
-        // Wait until the withdrawal is relayed
-        await messenger.waitForMessageStatus(
-          withdrawal.hash,
-          MessageStatus.RELAYED,
-        )
-
-        // Check your wallet balance on L1
-        console.log((await l1Signer.getBalance()).toString())
-        console.log('Bridged...')
-        onSubmit?.()
       } else {
         console.error(
           'MetaMask not detected. Please install and connect MetaMask.',
@@ -156,6 +135,80 @@ const ReviewWithdrawalDialogContent = ({
       }
     } catch (error) {
       console.error('Error in onSubmitWithdraw:', error)
+    }
+  }
+
+  const proveOnL1 = async () => {
+    if (typeof window.ethereum !== 'undefined') {
+      const ethereum = window.ethereum
+
+      try {
+        const accounts = await ethereum.request({
+          method: 'eth_requestAccounts',
+        })
+
+        // Change to the desired network with chain ID 11155111
+        await ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0xaa36a7' }],
+        })
+        console.log('Switched to the desired network:', accounts)
+
+        const l1Provider = new ethers.providers.Web3Provider(window.ethereum)
+        const l2Provider = new ethers.providers.StaticJsonRpcProvider(
+          'https://sepolia.optimism.io',
+        )
+
+        const l1Signer = l1Provider.getSigner(address)
+        const l2Signer = l2Provider.getSigner(address)
+
+        const messenger = new CrossChainMessenger({
+          l1ChainId: 11155111, // 11155111 for Sepolia, 1 for Ethereum
+          l2ChainId: 11155420, // 11155420 for OP Sepolia, 10 for OP Mainnet
+          l1SignerOrProvider: l1Signer,
+          l2SignerOrProvider: l2Signer,
+        })
+        console.log(withdrawData)
+        setLoading(true)
+        if (withdrawData) {
+          // Wait until the withdrawal is ready to prove
+          await messenger.waitForMessageStatus(
+            withdrawData.hash,
+            MessageStatus.READY_TO_PROVE,
+          )
+          console.log('proving...')
+          // Prove the withdrawal on L1
+          await messenger.proveMessage(withdrawData.hash)
+
+          // Wait until the withdrawal is ready for relay
+          await messenger.waitForMessageStatus(
+            withdrawData.hash,
+            MessageStatus.READY_FOR_RELAY,
+          )
+          console.log('relaying...')
+          // Relay the withdrawal on L1
+          await messenger.finalizeMessage(withdrawData.hash)
+
+          // Wait until the withdrawal is relayed
+          await messenger.waitForMessageStatus(
+            withdrawData.hash,
+            MessageStatus.RELAYED,
+          )
+        } else {
+          console.error(
+            'Withdraw data is undefined. Cannot wait for message status.',
+          )
+        }
+
+        // Check your wallet balance on L1
+        console.log((await l1Signer.getBalance()).toString())
+        console.log('Bridged...')
+        setLoading(false)
+      } catch (error) {
+        console.error('Error while switching network:', error)
+      }
+    } else {
+      console.error('MetaMask is not installed')
     }
   }
 
@@ -199,24 +252,35 @@ const ReviewWithdrawalDialogContent = ({
 
   return (
     <div className="flex flex-col w-full">
-      <div>
-        Amount to Withdraw: {formatUnits(txData.amount, l2Token.decimals)}{' '}
-        {l2Token.symbol}
-      </div>
-      <div>Gas Fee to Transfer: ~{formatEther(gasPrice)} ETH</div>
-      <div>Time to transfer: ~1 minute</div>
-      {txhash ? (
-        <div>
-          View Transaction:{' '}
-          <a
-            className="cursor-pointer underline"
-            href={`${l2.blockExplorers?.default.url}/tx/${txhash}`}
-          >
-            link
-          </a>
-        </div>
+      {loading ? (
+        <>
+          <div>Processing</div>
+          <div>.</div>
+          <div>.</div>
+        </>
       ) : (
-        <Button onClick={onSubmitwithdrawal}>Submit Withdrawal</Button>
+        <>
+          <div>
+            Amount to Withdraw: {formatUnits(txData.amount, l2Token.decimals)}{' '}
+            {l2Token.symbol}
+          </div>
+          <div>Gas Fee to Transfer: ~{formatEther(gasPrice)} ETH</div>
+          <div>Time to transfer: ~1 minute</div>
+          {txhash ? (
+            <div>
+              View Transaction:{' '}
+              <a
+                className="cursor-pointer underline"
+                href={`${l2.blockExplorers?.default.url}/tx/${txhash}`}
+              >
+                link
+              </a>
+              <Button onClick={proveOnL1}>Prove On L1</Button>
+            </div>
+          ) : (
+            <Button onClick={onSubmitwithdrawal}>Submit Withdrawal</Button>
+          )}
+        </>
       )}
     </div>
   )
